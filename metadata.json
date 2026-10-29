@@ -1,0 +1,10 @@
+{
+  "name": "Tepuk Nyamuk! Misi: KKA",
+  "description": "Game edukasi interaktif berbasis kamera MediaPipe Hands untuk asesmen Koding dan Kecerdasan Artifisial (KKA) SMK.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
