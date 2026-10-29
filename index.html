@@ -576,8 +576,8 @@
     <!-- SCREEN 4: ARENA GAMEPLAY KAMERA & MEDIAPIPE          -->
     <!-- ---------------------------------------------------- -->
     <section id="screen-game" class="hidden fixed inset-0 z-40 bg-black overflow-hidden">
-      <!-- Hidden Video Element for MediaPipe input -->
-      <video id="webcam-video" playsinline class="hidden" autoplay muted></video>
+      <!-- Off-screen Video Element for MediaPipe input (must NOT be display:none so videoWidth > 0) -->
+      <video id="webcam-video" playsinline autoplay muted style="position: fixed; top: -9999px; left: -9999px; width: 640px; height: 480px; opacity: 0; pointer-events: none;"></video>
 
       <!-- Fullscreen Game Canvas for mirrored camera background + game objects -->
       <canvas id="game-canvas" class="w-full h-full block cursor-crosshair"></canvas>
@@ -602,6 +602,12 @@
 
         <!-- Scores and Quick Controls -->
         <div class="pointer-events-auto flex items-center gap-2 self-end md:self-auto">
+          <!-- Camera Status Badge -->
+          <div id="hud-camera-status" class="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-slate-900/90 backdrop-blur-md border border-slate-700/80 text-[11px] font-bold text-slate-300 shadow-2xl">
+            <span id="hud-camera-dot" class="w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></span>
+            <span id="hud-camera-text">Menghubungkan Kamera...</span>
+          </div>
+
           <!-- Dynamic Score Display (Solo / Team or Multi-Player Battle) -->
           <div id="hud-scores-container" class="flex items-center gap-2 bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-2xl px-4 py-2 shadow-2xl">
             <div class="flex items-center gap-2">
@@ -2147,6 +2153,8 @@
     let handsInstance = null;
     let isGameRunning = false;
     let isGamePaused = false;
+    let isCameraActive = false;
+    let gameLoopId = null;
     let videoElement = null;
     let canvasElement = null;
     let canvasCtx = null;
@@ -2169,8 +2177,26 @@
     // Detected hand cursors
     let handCursors = []; // { x, y, isFist, prevFist, handIndex, zoneIndex }
 
+    function updateCameraStatus(active) {
+      isCameraActive = active;
+      const dot = document.getElementById('hud-camera-dot');
+      const text = document.getElementById('hud-camera-text');
+      if (!dot || !text) return;
+
+      if (active) {
+        dot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse';
+        text.textContent = 'Kamera Aktif';
+      } else {
+        dot.className = 'w-2 h-2 rounded-full bg-yellow-400';
+        text.textContent = 'Mode Sentuh / Mouse';
+      }
+    }
+
     // Start countdown transition
     function startCountdownToGame() {
+      // Unlock Web Audio immediately on user action
+      getAudioContext();
+
       // Gather inputs
       gameConfig.speed = document.getElementById('play-select-speed').value;
       gameConfig.mosquitoCount = parseInt(document.getElementById('play-select-mosquito-count').value);
@@ -2233,22 +2259,25 @@
         canvasElement.width = window.innerWidth;
         canvasElement.height = window.innerHeight;
       }
+      window.removeEventListener('resize', resize);
       window.addEventListener('resize', resize);
       resize();
 
-      // Support mouse / touch clicking directly on mosquitoes
+      // Support mouse / touch clicking directly on mosquitoes in ANY zone
       canvasElement.onpointerdown = (e) => {
         const rect = canvasElement.getBoundingClientRect();
         const clickX = e.clientX - rect.left;
         const clickY = e.clientY - rect.top;
-        checkSlapHit(clickX, clickY, 0); // Player 0 click
+        const zone = gameConfig.mode === 'battle' ? getZoneFromCoords(clickX, clickY) : 0;
+        checkSlapHit(clickX, clickY, zone);
       };
     }
 
-    // Initialize MediaPipe Hands & Camera
+    // Initialize MediaPipe Hands & Camera with robust fallbacks
     async function initWebcamAndMediaPipe() {
       isGameRunning = true;
       isGamePaused = false;
+      updateCameraStatus(false);
 
       // Start MediaPipe Hands if available
       try {
@@ -2260,7 +2289,7 @@
           handsInstance.setOptions({
             maxNumHands: 4,
             modelComplexity: 1,
-            minDetectionConfidence: 0.55,
+            minDetectionConfidence: 0.5,
             minTrackingConfidence: 0.5
           });
 
@@ -2270,25 +2299,34 @@
           if (typeof Camera !== 'undefined' && videoElement) {
             cameraInstance = new Camera(videoElement, {
               onFrame: async () => {
-                if (isGameRunning && !isGamePaused && videoElement.videoWidth) {
-                  await handsInstance.send({ image: videoElement });
+                if (isGameRunning && !isGamePaused && videoElement && videoElement.videoWidth) {
+                  try {
+                    await handsInstance.send({ image: videoElement });
+                  } catch (err) {
+                    // Ignore dropped frames
+                  }
                 }
               },
               width: 1280,
               height: 720
             });
+
             await cameraInstance.start();
+            updateCameraStatus(true);
+          } else {
+            fallbackWebcamDirect();
           }
         } else {
           fallbackWebcamDirect();
         }
       } catch (err) {
-        console.warn('MediaPipe hands load fallback:', err);
+        console.warn('CameraUtils / MediaPipe start fallback:', err);
         fallbackWebcamDirect();
       }
 
-      // Start main game loop
-      requestAnimationFrame(gameLoop);
+      // Start main game loop (guarantee single loop instance)
+      if (gameLoopId) cancelAnimationFrame(gameLoopId);
+      gameLoopId = requestAnimationFrame(gameLoop);
     }
 
     // Fallback if CameraUtils fails: use navigator.mediaDevices.getUserMedia directly
@@ -2298,17 +2336,28 @@
           .then(stream => {
             if (videoElement) {
               videoElement.srcObject = stream;
-              videoElement.play();
+              videoElement.play().then(() => {
+                updateCameraStatus(true);
+              }).catch(() => {
+                updateCameraStatus(false);
+              });
             }
           })
           .catch(e => {
-            showToast('Kamera tidak diizinkan atau tidak ditemukan. Mode sentuh/mouse aktif!', 'error');
+            updateCameraStatus(false);
+            showToast('Kamera tidak terdeteksi. Mode Sentuh / Mouse aktif!', 'info');
           });
+      } else {
+        updateCameraStatus(false);
       }
     }
 
     function stopWebcam() {
       isGameRunning = false;
+      if (gameLoopId) {
+        cancelAnimationFrame(gameLoopId);
+        gameLoopId = null;
+      }
       if (cameraInstance) {
         try { cameraInstance.stop(); } catch (e) {}
       }
@@ -2317,6 +2366,7 @@
         tracks.forEach(track => track.stop());
         videoElement.srcObject = null;
       }
+      updateCameraStatus(false);
     }
 
     // --- MEDIAPIPE MULTI-HAND TRACKING & FIST/GRAB GESTURE DETECTION ---
@@ -2571,10 +2621,15 @@
         // In battle mode, only hit mosquitoes inside player's own zone
         if (gameConfig.mode === 'battle' && m.zone !== playerZone) continue;
 
-        const dist = Math.hypot(hitX - m.x, hitY - m.y);
-        // Generous hit radius (radius + hand reach ~ 55px)
-        if (dist <= m.radius + 28 && dist < minDistance) {
-          minDistance = dist;
+        // Hit distance to mosquito body
+        const distBody = Math.hypot(hitX - m.x, hitY - m.y);
+        const isBodyHit = distBody <= (m.radius + 32);
+
+        // Generous hit check on the answer text bubble (centered at m.x, m.y + 32)
+        const isBadgeHit = Math.abs(hitX - m.x) <= 95 && Math.abs(hitY - (m.y + 32)) <= 25;
+
+        if ((isBodyHit || isBadgeHit) && distBody < minDistance) {
+          minDistance = distBody;
           targetMosquito = m;
         }
       }
@@ -2656,14 +2711,15 @@
         scale: 1.3
       });
 
-      // If in Solo or Team, move to next question or allow retry:
-      // Requirement specifies: "Jika menangkap nyamuk yang SALAH: Skor dikurangi (-2), muncul teks 'SALAH! -2', lalu lanjut ke soal berikutnya"
-      isTransitioningQuestion = true;
-      setTimeout(() => {
-        isTransitioningQuestion = false;
-        currentQuestionIndex++;
-        startNextQuestion();
-      }, 1200);
+      // If in Solo or Team mode, advance to next question
+      if (gameConfig.mode !== 'battle') {
+        isTransitioningQuestion = true;
+        setTimeout(() => {
+          isTransitioningQuestion = false;
+          currentQuestionIndex++;
+          startNextQuestion();
+        }, 1200);
+      }
     }
 
     function createExplosion(x, y, color, count = 20) {
@@ -2779,18 +2835,48 @@
       }
     }
 
+    function renderVirtualArenaBackground(ctx, w, h) {
+      // Tech Cyber Background when webcam is not available / loading
+      ctx.fillStyle = '#060B18';
+      ctx.fillRect(0, 0, w, h);
+
+      // Subtle Cyber Grid
+      ctx.save();
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.08)';
+      ctx.lineWidth = 1;
+      const gridSize = 48;
+      for (let x = 0; x < w; x += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, h);
+        ctx.stroke();
+      }
+      for (let y = 0; y < h; y += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y);
+        ctx.stroke();
+      }
+
+      // Vignette radial gradient
+      const grad = ctx.createRadialGradient(w / 2, h / 2, h * 0.2, w / 2, h / 2, w * 0.7);
+      grad.addColorStop(0, 'rgba(30, 41, 59, 0)');
+      grad.addColorStop(1, 'rgba(2, 6, 23, 0.85)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+      ctx.restore();
+    }
+
     function renderGameCanvas() {
       const ctx = canvasCtx;
       const w = canvasElement.width;
       const h = canvasElement.height;
 
-      // 1. Draw Mirrored Webcam Video as Live Background
-      ctx.save();
-      ctx.fillStyle = '#020617';
-      ctx.fillRect(0, 0, w, h);
-
-      if (videoElement && videoElement.readyState >= 2) {
-        // Mirrored drawing: flip horizontally
+      // 1. Draw Mirrored Webcam Video as Live Background (or Cyber Arena fallback)
+      if (isCameraActive && videoElement && videoElement.readyState >= 2 && videoElement.videoWidth > 0) {
+        ctx.save();
+        ctx.fillStyle = '#020617';
+        ctx.fillRect(0, 0, w, h);
         ctx.translate(w, 0);
         ctx.scale(-1, 1);
         ctx.drawImage(videoElement, 0, 0, w, h);
@@ -2800,7 +2886,7 @@
         ctx.fillStyle = 'rgba(2, 6, 23, 0.42)';
         ctx.fillRect(0, 0, w, h);
       } else {
-        ctx.restore();
+        renderVirtualArenaBackground(ctx, w, h);
       }
 
       // 2. Draw Battle Zone Dividers if in Battle Mode
@@ -3254,6 +3340,11 @@
       // Ensure default packages exist in storage
       loadPackages();
       showScreen('screen-login');
+
+      // Unlock Web Audio synthesizer on first user click or tap anywhere
+      window.addEventListener('pointerdown', () => {
+        getAudioContext();
+      }, { once: true });
     });
   </script>
 </body>
