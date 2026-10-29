@@ -960,13 +960,22 @@
         <!-- TAB CONTENT 3: VERCEL -->
         <div id="pub-content-vercel" class="hidden bg-slate-950 border border-slate-800 rounded-2xl p-4 text-xs space-y-3">
           <div class="text-white font-bold flex items-center gap-1.5 text-sm">
-            <i class="fa-solid fa-triangle-circle-square text-base"></i> Vercel (Performa Cepat & Otomatis)
+            <i class="fa-solid fa-triangle-circle-square text-base text-white"></i> Vercel (Performa Cepat & Domain Gratis .vercel.app)
           </div>
           <ol class="list-decimal list-inside space-y-2 text-slate-300 leading-relaxed">
-            <li>Buka <a href="https://vercel.com" target="_blank" rel="noopener noreferrer" class="text-sky-400 underline font-semibold">Vercel.com</a> dan login dengan akun GitHub / Email.</li>
-            <li>Pilih <strong>Add New...</strong> > <strong>Project</strong>.</li>
-            <li>Pilih repositori Anda. Pengaturan <code class="text-yellow-300 bg-slate-900 px-1 py-0.5 rounded">vercel.json</code> sudah otomatis disertakan dalam proyek ini.</li>
-            <li>Klik <strong>Deploy</strong>. Selesai! Web game live di subdomain <code class="text-emerald-300 font-mono">.vercel.app</code>.</li>
+            <li>Buka <a href="https://vercel.com" target="_blank" rel="noopener noreferrer" class="text-sky-400 underline font-semibold hover:text-sky-300">Vercel.com</a> dan masuk menggunakan akun GitHub Anda.</li>
+            <li>Klik tombol <strong>Add New...</strong> lalu pilih <strong>Project</strong>.</li>
+            <li>Klik <strong>Import</strong> pada repositori GitHub game ini.</li>
+            <li>Pada bagian <strong>Configure Project</strong>, pastikan pengaturannya seperti ini:
+              <div class="mt-2 ml-4 p-2.5 bg-slate-900 border border-slate-700/80 rounded-xl space-y-1 font-mono text-[11px] text-slate-200">
+                <div>• <strong class="text-yellow-400">Framework Preset:</strong> Vite</div>
+                <div>• <strong class="text-yellow-400">Root Directory:</strong> ./ (biarkan default)</div>
+                <div>• <strong class="text-yellow-400">Build Command:</strong> npm run build (otomatis)</div>
+                <div>• <strong class="text-yellow-400">Output Directory:</strong> dist (otomatis)</div>
+                <div>• <strong class="text-yellow-400">Environment Variables:</strong> Kosongkan (tidak butuh API key)</div>
+              </div>
+            </li>
+            <li>Klik tombol <strong>Deploy</strong>. Vercel akan otomatis memproses dan memberikan link HTTPS gratis (misal: <code class="text-emerald-300 font-mono">https://tepuk-nyamuk-kka.vercel.app</code>)!</li>
           </ol>
         </div>
 
